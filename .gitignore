@@ -1,0 +1,23 @@
+# 依赖与构建产物
+node_modules/
+dist/
+unpackage/
+.venv/
+__pycache__/
+.pytest_cache/
+
+# 环境变量与密钥（切勿提交）
+.env
+.env.local
+*.local.js
+app/src/config/local.js
+config.local.js
+secrets.local.*
+SECRETS.local.*
+
+# 微信开发者工具本地私有配置（含本机设置）
+project.private.config.json
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
