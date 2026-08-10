@@ -22,8 +22,7 @@
       "onLocationChange",
       "startLocationUpdate"
     ],
-    "lazyCodeLoading": "requiredComponents",
-    "__usePrivacyCheck__": true
+    "lazyCodeLoading": "requiredComponents"
   },
   "h5": {
     "title": "聚哪儿",

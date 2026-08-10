@@ -17,11 +17,7 @@
         <text class="room-name">{{ roomStore.room ? roomStore.room.name : '房间' }}</text>
         <text class="room-code" @click="copyCode">邀请码 {{ roomStore.room ? roomStore.room.code : '' }}（点击复制）</text>
       </view>
-      <view
-        class="conn-badge"
-        :class="{ connected: sharing, error: locationError }"
-        @click="retryLocation"
-      >
+      <view class="conn-badge" :class="{ connected: wsConnected }">
         <text>{{ statusText }}</text>
       </view>
     </view>
@@ -60,21 +56,14 @@ import { haversine } from '../../utils/geo';
 
 const roomStore = useRoomStore();
 
-const sharing = computed(() => {
+const wsConnected = computed(() => {
   if (roomStore.room && roomStore.room.closed) return false;
-  return roomStore.wsStatus === 'connected' && roomStore.locationStatus === 'active';
+  return roomStore.wsStatus === 'connected';
 });
-const locationError = computed(() => roomStore.locationStatus === 'error');
 const statusText = computed(() => {
   if (roomStore.room && roomStore.room.closed) return '已关闭';
-  if (locationError.value) return '定位未开启';
-  if (roomStore.locationStatus !== 'active') return '正在定位…';
-  return roomStore.wsStatus === 'connected' ? '位置共享中' : '网络重连中…';
+  return roomStore.wsStatus === 'connected' ? '实时连接中' : '连接中…';
 });
-
-function retryLocation() {
-  if (locationError.value) roomStore.retryLocation();
-}
 
 /** 地图中心：优先自己位置，否则取第一个有位置的成员 */
 const mapCenter = computed(() => {
@@ -234,10 +223,6 @@ onUnmounted(() => {
 .conn-badge.connected {
   background: #e6f7e6;
   color: #1aad19;
-}
-.conn-badge.error {
-  background: #fff1f0;
-  color: #e64340;
 }
 .bottom-panel {
   position: absolute;
