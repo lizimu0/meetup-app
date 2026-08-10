@@ -16,6 +16,7 @@ export const useRoomStore = defineStore('room', {
     members: [], // Member[]
     wsStatus: 'disconnected',
     myLocation: null, // { lat, lng }
+    locationStatus: 'idle', // idle | locating | active | error
     centroid: null,
     candidates: [], // PoiCandidate[]
     votes: {}, // poiId -> votes 数
@@ -134,25 +135,51 @@ export const useRoomStore = defineStore('room', {
     /* ---------- 轮询模式（微信云开发云函数） ---------- */
 
     _startPolling() {
-      this.pollTimer = setInterval(async () => {
+      this.wsStatus = 'disconnected';
+      this._pollFailCount = 0;
+      const poll = async () => {
         if (!this.room) return;
         try {
           const snap = await api.roomSnapshot(this.room.id);
           this.members = snap.members;
+          this.wsStatus = 'connected';
+          this._pollFailCount = 0;
           if (snap.room.closed) this.room.closed = true;
         } catch {
-          /* 轮询失败静默重试 */
+          this.wsStatus = 'disconnected';
+          this._pollFailCount = (this._pollFailCount || 0) + 1;
+          if (
+            this._pollFailCount >= 3 &&
+            (!this._lastPollFailToast || Date.now() - this._lastPollFailToast > 60000)
+          ) {
+            this._lastPollFailToast = Date.now();
+            uni.showToast({ title: '网络不稳定，正在重试', icon: 'none' });
+          }
         }
-      }, config.pollIntervalMs);
+      };
+      poll();
+      this.pollTimer = setInterval(poll, config.pollIntervalMs);
     },
 
     /* ---------- 位置上报 ---------- */
 
     /** 获取一次定位，统一输出 GCJ02 坐标 */
-    _locate(cb) {
+    _locate(cb, notifyOnFailure = false) {
+      // 重入保护：上一次定位未返回时跳过，避免授权弹窗叠加
+      if (this._locating) return;
+      this._locating = true;
+      const finish = () => {
+        this._locating = false;
+      };
       const fail = () => {
+        finish();
+        this.locationStatus = 'error';
         // 偶发定位失败（超时/信号波动）静默忽略；连续失败 3 次且 60 秒内未提示过才提醒
         this._locateFailCount = (this._locateFailCount || 0) + 1;
+        if (notifyOnFailure) {
+          this._showLocationPermissionGuide();
+          return;
+        }
         if (
           this._locateFailCount >= 3 &&
           (!this._lastLocateFailToast || Date.now() - this._lastLocateFailToast > 60000)
@@ -166,6 +193,9 @@ export const useRoomStore = defineStore('room', {
       uni.getLocation({
         type: 'wgs84',
         success: (res) => {
+          finish();
+          this._locateFailCount = 0;
+          this.locationStatus = 'active';
           const g = wgs84ToGcj02(res.latitude, res.longitude);
           cb(g.lat, g.lng);
         },
@@ -177,7 +207,9 @@ export const useRoomStore = defineStore('room', {
       uni.getLocation({
         type: 'gcj02',
         success: (res) => {
+          finish();
           this._locateFailCount = 0; // 成功后重置失败计数
+          this.locationStatus = 'active';
           cb(res.latitude, res.longitude);
         },
         fail,
@@ -185,17 +217,87 @@ export const useRoomStore = defineStore('room', {
       // #endif
     },
 
+    _showLocationPermissionGuide() {
+      // 弹窗防重：引导弹窗显示期间不再重复触发
+      if (this._permissionGuideShowing) return;
+      this._permissionGuideShowing = true;
+      const closeGuide = () => {
+        this._permissionGuideShowing = false;
+      };
+      // #ifdef MP-WEIXIN
+      uni.showModal({
+        title: '需要位置权限',
+        content: '请允许获取位置，才能在房间中共享位置并推荐集合点。',
+        confirmText: '去设置',
+        success: (res) => {
+          closeGuide();
+          if (res.confirm) {
+            uni.openSetting({
+              success: (settings) => {
+                if (!settings.authSetting['scope.userLocation']) return;
+                if (this.room) this._startLocationReport();
+                else this.requestInitialLocation(true);
+              },
+            });
+          }
+        },
+        fail: () => closeGuide(),
+      });
+      // #endif
+      // #ifndef MP-WEIXIN
+      uni.showToast({ title: '定位失败，请允许浏览器访问位置', icon: 'none' });
+      closeGuide();
+      // #endif
+    },
+
+    /** 首次进入应用时触发系统定位授权，但尚未加入房间时不上传位置 */
+    requestInitialLocation(force = false) {
+      if (this.myLocation && !force) return;
+      this.locationStatus = 'locating';
+      this._locate((lat, lng) => {
+        this.myLocation = { lat, lng };
+      }, true);
+    },
+
+    retryLocation() {
+      if (this.room) this._startLocationReport();
+      else this.requestInitialLocation(true);
+    },
+
     _startLocationReport() {
       this._stopLocationReport();
-      const doLocate = () => {
-        this._locate((lat, lng) => {
-          this.myLocation = { lat, lng };
-          this._pushLocation(lat, lng);
-        });
+      this.locationStatus = 'locating';
+      this._lastLocationPushAt = 0;
+      const report = (lat, lng) => {
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        this.locationStatus = 'active';
+        this.myLocation = { lat, lng };
+        const now = Date.now();
+        if (now - this._lastLocationPushAt < config.locationIntervalMs) return;
+        this._lastLocationPushAt = now;
+        this._pushLocation(lat, lng);
       };
-      this.locationTimer = setInterval(doLocate, config.locationIntervalMs);
-      // 立即上报一次
-      doLocate();
+      // #ifdef MP-WEIXIN
+      this._locationChangeHandler = (res) => report(res.latitude, res.longitude);
+      uni.onLocationChange(this._locationChangeHandler);
+      uni.startLocationUpdate({
+        type: 'gcj02',
+        success: () => this._locate(report),
+        fail: () => {
+          this._stopLocationReport();
+          this.locationStatus = 'error';
+          this._showLocationPermissionGuide();
+        },
+      });
+      // #endif
+      // #ifndef MP-WEIXIN
+      // 递归调度：上一次定位发起后再安排下一次，配合 _locate 重入保护避免请求堆积
+      const loop = () => {
+        this._locate(report);
+        this.locationTimer = setTimeout(loop, config.locationIntervalMs);
+      };
+      loop();
+      // #endif
     },
 
     _pushLocation(lat, lng) {
@@ -214,6 +316,13 @@ export const useRoomStore = defineStore('room', {
     },
 
     _stopLocationReport() {
+      // #ifdef MP-WEIXIN
+      if (this._locationChangeHandler) {
+        uni.offLocationChange(this._locationChangeHandler);
+        this._locationChangeHandler = null;
+      }
+      uni.stopLocationUpdate({ fail: () => {} });
+      // #endif
       if (this.locationTimer) {
         clearInterval(this.locationTimer);
         this.locationTimer = null;

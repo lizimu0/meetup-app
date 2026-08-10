@@ -38,7 +38,7 @@ meetup-app/
 
 | Key 类型 | 用途 | 配置位置 | 是否必需 |
 |---|---|---|---|
-| **Web服务** | 服务端 POI 搜索、路径规划（集合点推荐核心） | `server-node/.env` 的 `AMAP_WEB_KEY`；微信云函数 `app/cloudfunctions/meetup/index.js` 顶部的 `AMAP_WEB_KEY` | 要用推荐功能则必需 |
+| **Web服务** | 服务端 POI 搜索、路径规划（集合点推荐核心） | `server-node/.env` 的 `AMAP_WEB_KEY`；微信云函数读 `app/cloudfunctions/meetup/config.local.js`（不入库，模板见下） | 要用推荐功能则必需 |
 | **Web端(JS API)** | Web 页面地图底图显示 | `app/src/manifest.json` → `h5.sdkConfigs.maps.amap` | 可选（不填则 Web 端无底图，小程序不受影响） |
 
 4. 配额说明：个人开发者 Web 服务 Key 的 POI 搜索/路径规划日配额通常为 5000 次，开发调试足够；通勤模式会消耗路径规划配额（每次推荐最多 5 候选 × N 成员），注意控制频率。服务端已内置请求间隔控制 + 限流自动重试。
@@ -61,7 +61,7 @@ npm test                 # vitest 测试（20 项，含 20 成员 WS 负载测�
 1. 到 [微信公众平台](https://mp.weixin.qq.com) 注册小程序账号，获取 AppID（个人主体免费，测试号不支持云开发）；
 2. 填入 `app/src/manifest.json` → `mp-weixin.appid`；
 3. 微信开发者工具打开编译产物后，点顶部「云开发」按钮开通环境（按量计费，含免费额度）；
-4. 把云环境 ID 填入 `app/src/config/index.js` → `cloudEnv`；
+4. 把云环境 ID 填入 `app/src/config/local.js` → `cloudEnv`（文件不入库，首次使用复制 `local.example.js` 为 `local.js`）；
 5. 在开发者工具中右键 `cloudfunctions/meetup` → 「创建并部署：云端安装依赖」；
 6. 云开发控制台 → 数据库 → 新建集合 `meetup_rooms`。
 
@@ -119,6 +119,18 @@ app/src/
 ├── utils/geo.js        # WGS84→GCJ02 坐标转换（H5 零 Key 定位）
 └── config/index.js     # 后端地址、模式与云环境配置
 ```
+
+## 本地密钥文件说明（不入库）
+
+仓库中不含任何真实密钥，真实值保存在以下 gitignore 文件中（克隆后需按模板重建）：
+
+| 文件 | 内容 | 模板 |
+|---|---|---|
+| `server-node/.env` | 高德 Web 服务 Key | `server-node/.env.example` |
+| `app/src/config/local.js` | 微信云开发环境 ID（cloudEnv） | `app/src/config/local.example.js` |
+| `app/cloudfunctions/meetup/config.local.js` | 云函数用高德 Web 服务 Key | 无（格式：`module.exports = { AMAP_WEB_KEY: '...' }`，也可改用云函数环境变量 `AMAP_WEB_KEY`） |
+
+另：`manifest.json` 的 `mp-weixin.appid` 与 `h5` 地图 Key 在仓库中保持占位符，本地编译/上传前自行填入（提交时保持占位）。
 
 ## 已知限制与后续规划
 

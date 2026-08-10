@@ -73,6 +73,7 @@ const inviteRoom = ref(''); // 分享落地：邀请方房间名
 
 // 分享卡片落地：解析邀请码参数自动填充
 onLoad((options) => {
+  roomStore.requestInitialLocation();
   if (options && options.code && /^\d{6}$/.test(options.code)) {
     code.value = options.code;
     inviteRoom.value = options.room ? decodeURIComponent(options.room) : '好友的房间';
