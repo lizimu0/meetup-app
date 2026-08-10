@@ -151,8 +151,12 @@ export const useRoomStore = defineStore('room', {
     /** 获取一次定位，统一输出 GCJ02 坐标 */
     _locate(cb) {
       const fail = () => {
-        // 失败 Toast 节流：30 秒内只提示一次，避免刷屏
-        if (!this._lastLocateFailToast || Date.now() - this._lastLocateFailToast > 30000) {
+        // 偶发定位失败（超时/信号波动）静默忽略；连续失败 3 次且 60 秒内未提示过才提醒
+        this._locateFailCount = (this._locateFailCount || 0) + 1;
+        if (
+          this._locateFailCount >= 3 &&
+          (!this._lastLocateFailToast || Date.now() - this._lastLocateFailToast > 60000)
+        ) {
           this._lastLocateFailToast = Date.now();
           uni.showToast({ title: '定位失败，请检查浏览器/小程序定位权限', icon: 'none' });
         }
@@ -169,11 +173,13 @@ export const useRoomStore = defineStore('room', {
       });
       // #endif
       // #ifndef H5
-      // 小程序端原生支持 gcj02，无需 Key
+      // 小程序端原生支持 gcj02，无需 Key；不开强制高精度，避免弱网/室内频繁超时误报
       uni.getLocation({
         type: 'gcj02',
-        isHighAccuracy: true,
-        success: (res) => cb(res.latitude, res.longitude),
+        success: (res) => {
+          this._locateFailCount = 0; // 成功后重置失败计数
+          cb(res.latitude, res.longitude);
+        },
         fail,
       });
       // #endif

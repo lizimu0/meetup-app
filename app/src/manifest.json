@@ -1,6 +1,6 @@
 {
   "name": "聚哪儿",
-  "appid": "",
+  "appid": "wxe2eaaa96b4439efb",
   "description": "实时位置共享与集合点推荐",
   "versionName": "1.0.0",
   "versionCode": "100",
@@ -22,7 +22,8 @@
       "onLocationChange",
       "startLocationUpdate"
     ],
-    "lazyCodeLoading": "requiredComponents"
+    "lazyCodeLoading": "requiredComponents",
+    "__usePrivacyCheck__": true
   },
   "h5": {
     "title": "聚哪儿",
