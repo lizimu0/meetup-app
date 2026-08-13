@@ -51,6 +51,7 @@ function createRoomsRouter({ store, hub, amap }) {
       data: {
         room: MemoryStore.roomView(room),
         members: [...room.members.values()].map(MemoryStore.memberView),
+        votes: MemoryStore.votesView(room),
         memberId: member.id,
         token: member.token,
       },

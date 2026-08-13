@@ -32,6 +32,7 @@ const POI_TYPES = [
 ];
 
 const db = cloud.database();
+const _ = db.command;
 const roomsCol = db.collection('meetup_rooms');
 
 function ok(data) {
@@ -300,10 +301,12 @@ const actions = {
       travelMode: 'transit',
     };
     room.members.push(member);
-    await saveRoom(room);
+    // 原子追加成员，避免并发加入时整文档写回互相覆盖
+    await roomsCol.doc(room._id).update({ data: { members: _.push([member]) } });
     return ok({
       room: roomView(room),
       members: room.members.map(memberView),
+      votes: votesView(room),
       memberId: member.id,
       token: member.token,
     });
@@ -326,11 +329,17 @@ const actions = {
     if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
       return fail(4000, '位置无效');
     }
-    member.lat = Number(lat);
-    member.lng = Number(lng);
-    member.updatedAt = Date.now();
-    await saveRoom(room);
-    return ok({ ts: member.updatedAt });
+    const idx = room.members.findIndex((m) => m.id === memberId);
+    const ts = Date.now();
+    // 定向更新该成员的数组元素，避免整文档写回覆盖其他成员的并发上报
+    await roomsCol.doc(room._id).update({
+      data: {
+        [`members.${idx}.lat`]: Number(lat),
+        [`members.${idx}.lng`]: Number(lng),
+        [`members.${idx}.updatedAt`]: ts,
+      },
+    });
+    return ok({ ts });
   },
 
   async recommend({ roomId, memberId, token, optimize = 'distance', radius = 2000, travelMode }) {

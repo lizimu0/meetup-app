@@ -41,6 +41,7 @@ export const useRoomStore = defineStore('room', {
       const data = await api.joinRoom(code, nickname);
       this._applyJoin(data);
       this.members = data.members || [];
+      this.votes = data.votes || {};
       this._start();
     },
 

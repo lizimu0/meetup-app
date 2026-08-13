@@ -64,6 +64,24 @@ describe('rooms API', () => {
     expect(res.body.code).toBe(4001);
   });
 
+  it('加入房间响应携带已有投票', async () => {
+    const { app } = makeApp();
+    const created = await request(app).post('/api/rooms').send({ nickname: '小明' });
+    const roomId = created.body.data.room.id;
+    const m1 = { id: created.body.data.memberId, token: created.body.data.token };
+
+    await request(app)
+      .post(`/api/rooms/${roomId}/vote`)
+      .set('X-Member-Id', m1.id)
+      .set('X-Member-Token', m1.token)
+      .send({ poiId: 'p1' });
+
+    const joined = await request(app)
+      .post('/api/rooms/join')
+      .send({ code: created.body.data.room.code, nickname: '小红' });
+    expect(joined.body.data.votes).toEqual({ p1: 1 });
+  });
+
   it('位置上报 + 推荐 + 投票完整流程', async () => {
     const { app } = makeApp();
     const c1 = await request(app).post('/api/rooms').send({ nickname: '小明' });
