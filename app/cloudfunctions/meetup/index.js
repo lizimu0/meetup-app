@@ -70,6 +70,22 @@ function roomView(room) {
   };
 }
 
+/** 投票聚合视图：poiId -> 票数 */
+function votesView(room) {
+  const votes = {};
+  for (const [poiId, voters] of Object.entries(room.votes || {})) {
+    votes[poiId] = (voters || []).length;
+  }
+  return votes;
+}
+
+/** 归一化搜索半径（米）：夹在 [500, 50000]，非法值回退默认 2000 */
+function normalizeRadius(radius) {
+  const r = Number(radius);
+  if (!Number.isFinite(r)) return 2000;
+  return Math.min(50000, Math.max(500, r));
+}
+
 async function findRoom(roomId) {
   try {
     const res = await roomsCol.doc(roomId).get();
@@ -164,6 +180,7 @@ async function recommend(room, { optimize = 'distance', radius = 2000 }) {
   if (located.length < 2) {
     throw { code: 4003, message: '至少需要 2 名成员上报位置才能推荐集合点' };
   }
+  radius = normalizeRadius(radius);
 
   // 1. 质心
   const center = {
@@ -295,7 +312,11 @@ const actions = {
   async snapshot({ roomId }) {
     const room = await findRoom(roomId);
     if (!room) return fail(4001, '房间不存在');
-    return ok({ room: roomView(room), members: room.members.map(memberView) });
+    return ok({
+      room: roomView(room),
+      members: room.members.map(memberView),
+      votes: votesView(room),
+    });
   },
 
   async location({ roomId, memberId, token, lat, lng }) {

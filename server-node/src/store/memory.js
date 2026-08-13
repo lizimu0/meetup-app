@@ -88,8 +88,11 @@ class MemoryStore {
   updateLocation(roomId, memberId, lat, lng) {
     const member = this.getMember(roomId, memberId);
     if (!member) return null;
-    member.lat = Number(lat);
-    member.lng = Number(lng);
+    const la = Number(lat);
+    const ln = Number(lng);
+    if (!Number.isFinite(la) || !Number.isFinite(ln)) return null;
+    member.lat = la;
+    member.lng = ln;
     member.updatedAt = Date.now();
     member.online = true;
     return member;
@@ -125,6 +128,7 @@ class MemoryStore {
     for (const voters of room.votes.values()) voters.delete(memberId);
     if (!room.votes.has(poiId)) room.votes.set(poiId, new Set());
     room.votes.get(poiId).add(memberId);
+    this._persist();
     return { poiId, votes: room.votes.get(poiId).size, voters: [...room.votes.get(poiId)] };
   }
 
@@ -158,7 +162,15 @@ class MemoryStore {
     return {
       room: MemoryStore.roomView(room),
       members: [...room.members.values()].map(MemoryStore.memberView),
+      votes: MemoryStore.votesView(room),
     };
+  }
+
+  /** 输出投票聚合视图：poiId -> 票数 */
+  static votesView(room) {
+    const votes = {};
+    for (const [poiId, voters] of room.votes) votes[poiId] = voters.size;
+    return votes;
   }
 
   _persist() {
@@ -166,6 +178,7 @@ class MemoryStore {
     const data = [...this.rooms.values()].map((room) => ({
       ...MemoryStore.roomView(room),
       members: [...room.members.values()],
+      votes: Object.fromEntries([...room.votes].map(([k, s]) => [k, [...s]])),
     }));
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
@@ -180,12 +193,25 @@ class MemoryStore {
       const raw = fs.readFileSync(this.file, 'utf-8');
       const data = JSON.parse(raw);
       for (const r of data) {
-        const room = this.createRoom(r.name);
-        Object.assign(room, { id: r.id, code: r.code, createdAt: r.createdAt, closed: r.closed });
-        this.codeIndex.delete(room.code);
+        // 直接按持久化的 id/code 重建 Map，避免 createRoom 生成新 id/code 造成键错位
+        const room = {
+          id: r.id,
+          code: r.code,
+          name: r.name || '未命名房间',
+          createdAt: r.createdAt || Date.now(),
+          closed: Boolean(r.closed),
+          members: new Map(),
+          votes: new Map(),
+        };
+        for (const m of r.members || []) {
+          m.online = false; // 重启后统一离线，待重连再置在线
+          room.members.set(m.id, m);
+        }
+        for (const [poiId, voters] of Object.entries(r.votes || {})) {
+          room.votes.set(poiId, new Set(voters || []));
+        }
+        this.rooms.set(room.id, room);
         this.codeIndex.set(room.code, room.id);
-        room.members.clear();
-        for (const m of r.members) room.members.set(m.id, m);
       }
     } catch {
       /* 首次启动或文件损坏时忽略 */

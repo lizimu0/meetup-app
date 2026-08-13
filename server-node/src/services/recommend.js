@@ -31,6 +31,13 @@ function parseLocation(loc) {
   return { lat, lng };
 }
 
+/** 归一化搜索半径（米）：夹在 [500, 50000]，非法值回退默认 2000 */
+function normalizeRadius(radius) {
+  const r = Number(radius);
+  if (!Number.isFinite(r)) return 2000;
+  return Math.min(50000, Math.max(500, r));
+}
+
 /** 召回候选点：按分类顺序搜索，按 id 去重 */
 async function fetchCandidates(amap, center, radius) {
   const location = `${center.lng},${center.lat}`;
@@ -79,7 +86,7 @@ async function recommend({ members, optimize = 'distance', radius = 2000, amap }
   }
 
   const center = centroid(located);
-  const candidates = await fetchCandidates(amap, center, radius);
+  const candidates = await fetchCandidates(amap, center, normalizeRadius(radius));
   if (candidates.length === 0) {
     return { centroid: center, candidates: [] };
   }

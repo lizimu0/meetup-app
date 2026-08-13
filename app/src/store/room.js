@@ -92,6 +92,7 @@ export const useRoomStore = defineStore('room', {
       switch (event) {
         case 'welcome':
           this.members = data.members || [];
+          this.votes = data.votes || {};
           break;
         case 'location:update': {
           const m = this.members.find((x) => x.id === data.memberId);
@@ -139,6 +140,7 @@ export const useRoomStore = defineStore('room', {
         try {
           const snap = await api.roomSnapshot(this.room.id);
           this.members = snap.members;
+          this.votes = snap.votes || {};
           if (snap.room.closed) this.room.closed = true;
         } catch {
           /* 轮询失败静默重试 */
@@ -166,6 +168,7 @@ export const useRoomStore = defineStore('room', {
       uni.getLocation({
         type: 'wgs84',
         success: (res) => {
+          this._locateFailCount = 0; // 成功后重置失败计数
           const g = wgs84ToGcj02(res.latitude, res.longitude);
           cb(g.lat, g.lng);
         },
