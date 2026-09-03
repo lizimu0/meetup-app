@@ -45,8 +45,8 @@ export const cloudApi = {
   joinRoom(code, nickname) {
     return call('join', { code, nickname });
   },
-  roomSnapshot(roomId) {
-    return call('snapshot', { roomId });
+  roomSnapshot(roomId, memberId, token) {
+    return call('snapshot', { roomId, memberId, token });
   },
   reportLocation(roomId, memberId, token, lat, lng) {
     return call('location', { roomId, memberId, token, lat, lng });

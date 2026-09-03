@@ -20,7 +20,6 @@ function makeFakeAmap() {
     },
   };
 }
-
 function makeApp() {
   const store = new MemoryStore();
   const hub = new Hub();
@@ -41,11 +40,25 @@ describe('rooms API', () => {
     expect(res.body.data.token).toBeTruthy();
   });
 
+  it('超长房间名与昵称被截断(广播字段防滥用)', async () => {
+    const { app } = makeApp();
+    const res = await request(app)
+      .post('/api/rooms')
+      .send({ name: 'x'.repeat(200), nickname: 'n'.repeat(100) });
+    expect(res.body.data.room.name).toHaveLength(50);
+    const join = await request(app)
+      .post('/api/rooms/join')
+      .send({ code: res.body.data.room.code, nickname: 'm'.repeat(100) });
+    const joined = join.body.data.members.find((m) => m.nickname.startsWith('m'));
+    expect(joined.nickname).toHaveLength(20);
+  });
+
   it('邀请码加入 → 快照包含两名成员', async () => {
     const { app } = makeApp();
     const created = await request(app).post('/api/rooms').send({ nickname: '小明' });
     const { code } = created.body.data.room;
     const roomId = created.body.data.room.id;
+    const m1 = { id: created.body.data.memberId, token: created.body.data.token };
 
     const joined = await request(app)
       .post('/api/rooms/join')
@@ -53,8 +66,33 @@ describe('rooms API', () => {
     expect(joined.body.code).toBe(0);
     expect(joined.body.data.members).toHaveLength(2);
 
-    const snap = await request(app).get(`/api/rooms/${roomId}`);
+    const snap = await request(app)
+      .get(`/api/rooms/${roomId}`)
+      .set('X-Member-Id', m1.id)
+      .set('X-Member-Token', m1.token);
     expect(snap.body.data.members).toHaveLength(2);
+  });
+
+  it('快照接口无成员凭证返回 401(位置隐私)', async () => {
+    const { app } = makeApp();
+    const created = await request(app).post('/api/rooms').send({ nickname: '小明' });
+    const roomId = created.body.data.room.id;
+
+    const res = await request(app).get(`/api/rooms/${roomId}`);
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe(4003);
+  });
+
+  it('快照接口伪造 token 返回 401', async () => {
+    const { app } = makeApp();
+    const created = await request(app).post('/api/rooms').send({ nickname: '小明' });
+    const roomId = created.body.data.room.id;
+
+    const res = await request(app)
+      .get(`/api/rooms/${roomId}`)
+      .set('X-Member-Id', created.body.data.memberId)
+      .set('X-Member-Token', 'forged-token');
+    expect(res.status).toBe(401);
   });
 
   it('错误邀请码返回 4001', async () => {
@@ -161,18 +199,39 @@ describe('rooms API', () => {
     expect(res.body.data.backend).toBe('node');
   });
 
-  it('direction 代理接口返回耗时', async () => {
+  it('direction 代理接口返回耗时(携带成员凭证)', async () => {
     const { app } = makeApp();
+    const created = await request(app).post('/api/rooms').send({ nickname: '小明' });
+    const roomData = created.body.data;
     const res = await request(app)
       .get('/api/direction')
+      .set('X-Room-Id', roomData.room.id)
+      .set('X-Member-Id', roomData.memberId)
+      .set('X-Member-Token', roomData.token)
       .query({ mode: 'walking', origin: '121.47,31.23', destination: '121.48,31.24' });
     expect(res.body.code).toBe(0);
     expect(res.body.data.duration).toBe(600);
   });
 
+  it('direction 代理无凭证返回 401(防止配额盗刷)', async () => {
+    const { app } = makeApp();
+    const res = await request(app)
+      .get('/api/direction')
+      .query({ mode: 'walking', origin: '121.47,31.23', destination: '121.48,31.24' });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe(4003);
+  });
+
   it('direction 代理参数校验', async () => {
     const { app } = makeApp();
-    const res = await request(app).get('/api/direction').query({ mode: 'flying' });
+    const created = await request(app).post('/api/rooms').send({ nickname: '小明' });
+    const roomData = created.body.data;
+    const res = await request(app)
+      .get('/api/direction')
+      .set('X-Room-Id', roomData.room.id)
+      .set('X-Member-Id', roomData.memberId)
+      .set('X-Member-Token', roomData.token)
+      .query({ mode: 'flying' });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe(4000);
   });

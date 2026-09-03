@@ -1,16 +1,63 @@
 /**
  * 高德 API 代理路由（隐藏 Web Key）。
+ * 协议标注为调试用:前端正式流程走已鉴权的 /api/rooms/:roomId/recommend。
+ * 代理本身消耗服务端持有的 Web Key 配额,因此必须要求房间成员凭证,
+ * 并按 IP 限流,防止公网部署后变成无鉴权的开放代理盗刷配额。
  */
 const express = require('express');
 
-function createAmapRouter({ amap }) {
+/** 简单固定窗口 IP 限流（无外部依赖）。 */
+function createRateLimiter({ windowMs, max }) {
+  const hits = new Map(); // ip -> { windowStart, count }
+  const sweep = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, h] of hits) {
+      if (now - h.windowStart >= windowMs) hits.delete(ip);
+    }
+  }, windowMs);
+  // 避免 sweep 定时器阻止进程退出（单测中频繁建 app 时尤其重要）
+  sweep.unref?.();
+  return function limited(ip) {
+    const now = Date.now();
+    let h = hits.get(ip);
+    if (!h || now - h.windowStart >= windowMs) {
+      h = { windowStart: now, count: 0 };
+      hits.set(ip, h);
+    }
+    h.count += 1;
+    return h.count > max;
+  };
+}
+
+function createAmapRouter({ store, amap }) {
   const router = express.Router();
+  const limited = createRateLimiter({ windowMs: 60_000, max: 60 });
+
+  /** 代理接口共用门禁:成员凭证 + IP 限流 */
+  function guardProxy(store2, req, res) {
+    const roomId = req.header('X-Room-Id');
+    const memberId = req.header('X-Member-Id');
+    const token = req.header('X-Member-Token');
+    const room = roomId ? store2.getRoom(roomId) : null;
+    const member = room ? store2.getMember(roomId, memberId) : null;
+    if (!member || member.token !== token) {
+      res.status(401).json({ code: 4003, message: '鉴权失败(需房间成员凭证)', data: null });
+      return false;
+    }
+    const ip = req.ip || 'unknown';
+    if (limited(ip)) {
+      res.status(429).json({ code: 4029, message: '请求过于频繁', data: null });
+      return false;
+    }
+    return true;
+  }
 
   // GET /api/poi/search?keywords=&location=lng,lat&radius=&types=&region=
   router.get('/poi/search', async (req, res) => {
     if (!amap.configured) {
       return res.status(400).json({ code: 5001, message: '高德 Web Key 未配置', data: null });
     }
+    if (!guardProxy(store, req, res)) return;
     const { keywords, location, radius, types, region } = req.query;
     try {
       let pois;
@@ -35,6 +82,7 @@ function createAmapRouter({ amap }) {
     if (!amap.configured) {
       return res.status(400).json({ code: 5001, message: '高德 Web Key 未配置', data: null });
     }
+    if (!guardProxy(store, req, res)) return;
     const { mode, origin, destination, city } = req.query;
     if (!['driving', 'walking', 'transit'].includes(mode) || !origin || !destination) {
       return res

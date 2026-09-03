@@ -8,6 +8,20 @@ const { recommend, RecommendError } = require('../services/recommend');
 
 const TRAVEL_MODES = ['driving', 'walking', 'transit'];
 
+// 广播字段长度上限:房间名/昵称/头像会原样广播给全体成员,超限值截断防滥用
+const MAX_ROOM_NAME = 50;
+const MAX_NICKNAME = 20;
+const MAX_AVATAR = 500;
+
+/** 清洗用户提交的房间/成员资料:非字符串转空,超长截断 */
+function sanitizeProfile(name, nickname, avatar) {
+  return {
+    name: typeof name === 'string' ? name.slice(0, MAX_ROOM_NAME) : undefined,
+    nickname: typeof nickname === 'string' ? nickname.slice(0, MAX_NICKNAME) : undefined,
+    avatar: typeof avatar === 'string' ? avatar.slice(0, MAX_AVATAR) : undefined,
+  };
+}
+
 /** 从请求头解析并校验成员身份，失败返回 null */
 function authMember(store, req) {
   const roomId = req.params.roomId;
@@ -23,9 +37,9 @@ function createRoomsRouter({ store, hub, amap }) {
 
   // POST /api/rooms 创建房间（创建者自动加入）
   router.post('/', (req, res) => {
-    const { name, nickname, avatar } = req.body || {};
-    const room = store.createRoom(name);
-    const member = store.addMember(room, { nickname, avatar });
+    const profile = sanitizeProfile(req.body?.name, req.body?.nickname, req.body?.avatar);
+    const room = store.createRoom(profile.name);
+    const member = store.addMember(room, profile);
     res.json({
       code: 0,
       message: 'ok',
@@ -35,7 +49,7 @@ function createRoomsRouter({ store, hub, amap }) {
 
   // POST /api/rooms/join 邀请码加入
   router.post('/join', (req, res) => {
-    const { code, nickname, avatar } = req.body || {};
+    const code = req.body?.code;
     const room = store.getRoomByCode(code);
     if (!room) {
       return res.status(404).json({ code: 4001, message: '邀请码不存在', data: null });
@@ -43,7 +57,8 @@ function createRoomsRouter({ store, hub, amap }) {
     if (room.closed) {
       return res.status(410).json({ code: 4002, message: '房间已关闭', data: null });
     }
-    const member = store.addMember(room, { nickname, avatar });
+    const profile = sanitizeProfile(undefined, req.body?.nickname, req.body?.avatar);
+    const member = store.addMember(room, profile);
     if (hub) hub.broadcast(room.id, 'member:join', { member: MemoryStore.memberView(member) });
     res.json({
       code: 0,
@@ -59,10 +74,16 @@ function createRoomsRouter({ store, hub, amap }) {
   });
 
   // GET /api/rooms/:roomId 房间快照（断线恢复 / 轮询）
+  // 返回全体成员实时位置,必须与其他接口一致地校验成员凭证,
+  // 否则拿到 roomId 的任何人都能持续追踪成员位置。
   router.get('/:roomId', (req, res) => {
     const room = store.getRoom(req.params.roomId);
     if (!room) {
       return res.status(404).json({ code: 4001, message: '房间不存在', data: null });
+    }
+    const auth = authMember(store, req);
+    if (!auth) {
+      return res.status(401).json({ code: 4003, message: '鉴权失败', data: null });
     }
     res.json({ code: 0, message: 'ok', data: store.snapshot(room) });
   });

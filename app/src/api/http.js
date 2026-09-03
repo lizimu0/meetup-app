@@ -32,8 +32,10 @@ const restApi = {
   joinRoom(code, nickname) {
     return request('POST', '/api/rooms/join', { body: { code, nickname } });
   },
-  roomSnapshot(roomId) {
-    return request('GET', `/api/rooms/${roomId}`);
+  roomSnapshot(roomId, memberId, token) {
+    return request('GET', `/api/rooms/${roomId}`, {
+      headers: { 'X-Member-Id': memberId, 'X-Member-Token': token },
+    });
   },
   reportLocation(roomId, memberId, token, lat, lng) {
     return request('POST', `/api/rooms/${roomId}/location`, {
