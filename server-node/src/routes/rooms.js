@@ -5,8 +5,12 @@
 const express = require('express');
 const { MemoryStore } = require('../store/memory');
 const { recommend, RecommendError } = require('../services/recommend');
+const { createRateLimiter } = require('../rateLimit');
 
 const TRAVEL_MODES = ['driving', 'walking', 'transit'];
+
+// 邀请码仅 6 位数字(约 20bit),必须限制尝试频率,防脚本穷举混入房间看位置
+const JOIN_ATTEMPTS_PER_MIN = 10;
 
 // 广播字段长度上限:房间名/昵称/头像会原样广播给全体成员,超限值截断防滥用
 const MAX_ROOM_NAME = 50;
@@ -34,6 +38,7 @@ function authMember(store, req) {
 
 function createRoomsRouter({ store, hub, amap }) {
   const router = express.Router();
+  const joinLimited = createRateLimiter({ windowMs: 60_000, max: JOIN_ATTEMPTS_PER_MIN });
 
   // POST /api/rooms 创建房间（创建者自动加入）
   router.post('/', (req, res) => {
@@ -48,10 +53,15 @@ function createRoomsRouter({ store, hub, amap }) {
   });
 
   // POST /api/rooms/join 邀请码加入
+  // 防穷举:只对失败尝试按 IP 计数(合法加入不受影响);6 位码约 20bit,
+  // 无限流时脚本可日穷举百万空间混入房间看位置。
   router.post('/join', (req, res) => {
     const code = req.body?.code;
     const room = store.getRoomByCode(code);
     if (!room) {
+      if (joinLimited(req.ip || 'unknown')) {
+        return res.status(429).json({ code: 4029, message: '尝试过于频繁，请稍后再试', data: null });
+      }
       return res.status(404).json({ code: 4001, message: '邀请码不存在', data: null });
     }
     if (room.closed) {

@@ -64,6 +64,7 @@
 ### POST /api/rooms/join 加入房间
 
 请求体：`{ "code": "123456", "nickname": "小红" }`
+防穷举：失败尝试按 IP 限流（10 次/分钟），超出返回 `429/4029`。
 响应 data：`{ "room": Room, "members": Member[], "memberId": "...", "token": "..." }`
 错误码：`4001` 邀请码不存在、`4002` 房间已关闭。
 

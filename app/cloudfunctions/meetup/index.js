@@ -275,7 +275,8 @@ const actions = {
       travelMode: 'transit',
     };
     const room = {
-      code: String(Math.floor(Math.random() * 1000000)).padStart(6, '0'),
+      // crypto.randomInt 替代 Math.random(非加密安全,可预测)
+      code: String(require('crypto').randomInt(0, 1000000)).padStart(6, '0'),
       name: name || '未命名房间',
       createdAt: Date.now(),
       closed: false,

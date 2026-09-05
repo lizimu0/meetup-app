@@ -95,6 +95,16 @@ describe('rooms API', () => {
     expect(res.status).toBe(401);
   });
 
+  it('join 连续失败超过限流阈值返回 429(防邀请码穷举)', async () => {
+    const { app } = makeApp();
+    let last;
+    for (let i = 0; i < 12; i++) {
+      last = await request(app).post('/api/rooms/join').send({ code: '000000' });
+    }
+    expect(last.status).toBe(429);
+    expect(last.body.code).toBe(4029);
+  });
+
   it('错误邀请码返回 4001', async () => {
     const { app } = makeApp();
     const res = await request(app).post('/api/rooms/join').send({ code: '000000' });
