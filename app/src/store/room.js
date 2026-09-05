@@ -139,7 +139,7 @@ export const useRoomStore = defineStore('room', {
       this.pollTimer = setInterval(async () => {
         if (!this.room) return;
         try {
-          const snap = await api.roomSnapshot(this.room.id);
+          const snap = await api.roomSnapshot(this.room.id, this.memberId, this.token);
           this.members = snap.members;
           this.votes = snap.votes || {};
           if (snap.room.closed) this.room.closed = true;

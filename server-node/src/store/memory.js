@@ -61,6 +61,25 @@ class MemoryStore {
     return true;
   }
 
+  /**
+   * 清理创建超过 maxAgeMs 的过期房间(默认 24h):
+   * rooms 与 codeIndex 此前只增不减,长期运行内存与持久化文件无限膨胀。
+   * 返回清理的数量。
+   */
+  sweepExpiredRooms(maxAgeMs = 24 * 60 * 60 * 1000) {
+    const now = Date.now();
+    let removed = 0;
+    for (const [id, room] of this.rooms) {
+      if (now - room.createdAt > maxAgeMs) {
+        this.codeIndex.delete(room.code);
+        this.rooms.delete(id);
+        removed += 1;
+      }
+    }
+    if (removed) this._persist();
+    return removed;
+  }
+
   /* ---------- 成员 ---------- */
 
   addMember(room, { nickname, avatar = '' }) {

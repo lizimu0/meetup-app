@@ -23,3 +23,11 @@ server.listen(config.port, () => {
     console.warn('[warn] 未配置 AMAP_WEB_KEY，集合点推荐功能将不可用');
   }
 });
+
+// 房间 24h 过期清理:启动时清一次(含持久化恢复的旧房间),此后每小时一轮
+const ROOM_TTL_MS = 24 * 60 * 60 * 1000;
+store.sweepExpiredRooms(ROOM_TTL_MS);
+setInterval(() => {
+  const removed = store.sweepExpiredRooms(ROOM_TTL_MS);
+  if (removed) console.log(`[meetup-server-node] cleaned ${removed} expired room(s)`);
+}, 60 * 60 * 1000).unref();

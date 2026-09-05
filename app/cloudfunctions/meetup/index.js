@@ -275,7 +275,8 @@ const actions = {
       travelMode: 'transit',
     };
     const room = {
-      code: String(Math.floor(Math.random() * 1000000)).padStart(6, '0'),
+      // crypto.randomInt 替代 Math.random(非加密安全,可预测)
+      code: String(require('crypto').randomInt(0, 1000000)).padStart(6, '0'),
       name: name || '未命名房间',
       createdAt: Date.now(),
       closed: false,
@@ -312,9 +313,12 @@ const actions = {
     });
   },
 
-  async snapshot({ roomId }) {
+  async snapshot({ roomId, memberId, token }) {
     const room = await findRoom(roomId);
     if (!room) return fail(4001, '房间不存在');
+    // 快照返回全体成员实时位置,必须校验成员凭证,防止仅凭 roomId 追踪位置
+    const member = authMember(room, memberId, token);
+    if (!member) return fail(4003, '鉴权失败');
     return ok({
       room: roomView(room),
       members: room.members.map(memberView),

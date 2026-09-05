@@ -64,13 +64,15 @@
 ### POST /api/rooms/join 加入房间
 
 请求体：`{ "code": "123456", "nickname": "小红" }`
+防穷举：失败尝试按 IP 限流（10 次/分钟），超出返回 `429/4029`。
 响应 data：`{ "room": Room, "members": Member[], "memberId": "...", "token": "..." }`
 错误码：`4001` 邀请码不存在、`4002` 房间已关闭。
 
 ### GET /api/rooms/{roomId} 房间快照
 
+请求头：`X-Member-Id`、`X-Member-Token`（快照含全体成员实时位置，必须鉴权）
 响应 data：`{ "room": Room, "members": Member[] }`
-（用于断线恢复与 uniCloud 轮询模式）
+（用于断线恢复与 uniCloud 轮询模式；云函数 snapshot action 同样要求 `memberId`/`token` 参数）
 
 ### POST /api/rooms/{roomId}/recommend 请求集合点推荐
 
@@ -91,11 +93,14 @@
 
 ### GET /api/poi/search 高德 POI 代理（调试用）
 
+请求头：`X-Room-Id`、`X-Member-Id`、`X-Member-Token`（房间成员凭证）
 query：`keywords`、`location=lng,lat`、`radius`、`types`
 透传高德 `v5/place/around` / `v5/place/text`，隐藏服务端 Web Key。
+无凭证返回 `401/4003`；按 IP 限流（60 次/分钟）超出返回 `429/4029`。
 
 ### GET /api/direction 高德路径规划代理（调试用）
 
+请求头：同 `/api/poi/search`
 query：`mode=driving|walking|transit`、`origin=lng,lat`、`destination=lng,lat`、`city`
 响应 data：`{ "duration": 秒数或 null }`，同样隐藏服务端 Web Key。
 

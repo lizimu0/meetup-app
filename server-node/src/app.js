@@ -16,7 +16,7 @@ function createApp({ store, hub, amap, backendName = 'node' }) {
   });
 
   app.use('/api/rooms', createRoomsRouter({ store, hub, amap }));
-  app.use('/api', createAmapRouter({ amap }));
+  app.use('/api', createAmapRouter({ store, amap }));
 
   // 统一 404
   app.use((req, res) => {
