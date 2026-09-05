@@ -73,3 +73,18 @@ describe('MemoryStore 持久化往返', () => {
     expect(store.rooms.size).toBe(0);
   });
 });
+
+describe('rooms TTL', () => {
+  it('sweepExpiredRooms 清理过期房间并释放邀请码索引', () => {
+    const store = new MemoryStore();
+    const fresh = store.createRoom('新房间');
+    const old = store.createRoom('旧房间');
+    old.createdAt = Date.now() - 25 * 60 * 60 * 1000; // 25h 前
+
+    const removed = store.sweepExpiredRooms(24 * 60 * 60 * 1000);
+    expect(removed).toBe(1);
+    expect(store.getRoom(old.id)).toBeNull();
+    expect(store.getRoomByCode(old.code)).toBeNull();
+    expect(store.getRoom(fresh.id)).toBeTruthy();
+  });
+});
